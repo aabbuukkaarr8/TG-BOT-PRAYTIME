@@ -1,0 +1,5 @@
+bind_addr = ":8080"
+log_level = "debug"
+[store]
+database_url = "postgres://comment:password@localhost:5432/comment_db?sslmode=disable"
+

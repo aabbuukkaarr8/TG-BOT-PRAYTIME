@@ -6,17 +6,26 @@ import (
 	"time"
 )
 
-// ЗАМЕНИ существующую функцию на эту:
 func SchedulePrayerNotifications(rabbit *rabbitmq.Client, chatID int64) {
+	taskForSchedule(rabbit, chatID)
+	for {
+		now := time.Now()
+		next := now.Add(24 * time.Hour)
+		next = time.Date(next.Year(), next.Month(), next.Day(), 0, 0, 0, 0, next.Location())
+		duration := next.Sub(now)
+		time.Sleep(duration)
+		taskForSchedule(rabbit, chatID)
+	}
+}
+func taskForSchedule(rabbit *rabbitmq.Client, chatID int64) {
 	times, _ := PrayerTimes()
 	now := time.Now()
 
 	for name, timeStr := range times {
 		prayerTime := parsePrayerTime(timeStr)
-		notifyTime := prayerTime.Add(-5 * time.Minute)
 
 		// ДОБАВИЛИ ПРОВЕРКИ:
-		if prayerTime.Before(now) || notifyTime.Before(now) {
+		if prayerTime.Before(now) || prayerTime.Before(now) {
 			continue
 		}
 
@@ -24,12 +33,16 @@ func SchedulePrayerNotifications(rabbit *rabbitmq.Client, chatID int64) {
 			ChatID:      chatID,
 			PrayerName:  name,
 			PrayerTime:  timeStr,
-			ScheduledAt: notifyTime,
+			ScheduledAt: prayerTime,
+		}
+		if notification.PrayerName == "Isha" {
+
 		}
 
 		rabbit.PublishPrayerNotification(context.Background(), notification)
 	}
 }
+
 func parsePrayerTime(timeStr string) time.Time {
 	// timeStr в формате "05:30" (24h)
 	now := time.Now()

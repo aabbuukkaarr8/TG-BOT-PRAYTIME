@@ -1,25 +1,17 @@
-package main
+package bot_working
 
 import (
 	"encoding/json"
 	"fmt"
+	"gihub.com/aabbuukkaarr8/TG-BOT-PRAYTIME/internal/service"
 	"gihub.com/aabbuukkaarr8/TG-BOT-PRAYTIME/parse_api"
-	rabbitmq "gihub.com/aabbuukkaarr8/TG-BOT-PRAYTIME/rabbitMQ"
+	rabbitmq "gihub.com/aabbuukkaarr8/TG-BOT-PRAYTIME/rabbit_mq"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
 	"time"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-var dailyStarts = make(map[int64]string)
-
-func main() {
-	rabbit, err := rabbitmq.New("amqp://guest:guest@localhost:5672/")
-	if err != nil {
-		log.Fatal("Failed to connect to RabbitMQ:", err)
-	}
-	defer rabbit.Close()
-
+func StartBot(srv *service.Service, rabbit *rabbitmq.Client) {
 	bot, err := tgbotapi.NewBotAPI("8470796435:AAEHCu9VzGRjJ_DCPthocbF1KgLSicZ2dTE")
 	if err != nil {
 		log.Panic(err)
@@ -36,21 +28,37 @@ func main() {
 	go startPrayerWorker(rabbit, bot)
 
 	for update := range updates {
-		if update.Message.Text == "/start" {
+		if update.Message.Text == "Напоминать" {
 			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-			today := time.Now().Format("2006-01-02")
-
-			// ПРОВЕРЯЕМ БЫЛ ЛИ УЖЕ /start СЕГОДНЯ
-			if dailyStarts[update.Message.Chat.ID] == today {
-				bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Вы уже запускали бота сегодня"))
+			//Проверка запущен ли уже бот у этого пользователя
+			answer := srv.Exists(update.Message.Chat.ID)
+			if answer == true {
+				bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Бот уже запущен!"))
 				continue
 			}
+			user := service.User{
+				ChatID:  update.Message.Chat.ID,
+				Status:  "on",
+				Fajr:    "on",
+				Zuhr:    "on",
+				Asr:     "on",
+				Maghrib: "on",
+				Isha:    "on",
+			}
+			srv.Create(user)
 
-			// СОХРАНЯЕМ ДАТУ ЗАПУСКА
-			dailyStarts[update.Message.Chat.ID] = today
 			go parse_api.SchedulePrayerNotifications(rabbit, update.Message.Chat.ID)
 
-			bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Теперь я буду напоминать тебе о Намазах!"))
+			btn := tgbotapi.NewInlineKeyboardButtonData("Настройки", "settings")
+			keyboard := tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(btn),
+			)
+
+			// создаём сообщение с кнопкой сразу
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Теперь я буду напоминать тебе о Намазах!")
+			msg.ReplyMarkup = keyboard
+
+			bot.Send(msg)
 		}
 
 		// /times - показать время намазов
